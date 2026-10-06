@@ -15,6 +15,8 @@ public interface DocumentRepository extends JpaRepository<Document, String> {
 
     List<Document> findByTenantIdAndCandidateId(String tenantId, String candidateId);
 
+    List<Document> findByTenantIdAndCandidateIdAndDocumentTypeOrderByVersionDesc(String tenantId, String candidateId, String documentType);
+
     List<Document> findByTenantIdAndEmployeeId(String tenantId, String employeeId);
 
     List<Document> findByTenantIdAndApplicationId(String tenantId, String applicationId);
