@@ -6,6 +6,8 @@ metadata:
   name: frontend-config
   namespace: dev
 data:
+  # Staff sign-in is verified by the Spring API (server-side call from the Next.js login route)
+  BACKEND_URL: "http://backend-service:8080"
   # Resume storage. Leave S3_BUCKET empty to store resumes on the volume under /data/uploads.
   S3_BUCKET: ""
   AWS_REGION: "us-east-2"

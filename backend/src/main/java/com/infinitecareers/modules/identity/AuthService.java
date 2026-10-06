@@ -21,6 +21,7 @@ public class AuthService {
     private final RoleRepository roleRepository;
     private final PasswordEncoder passwordEncoder;
     private final JwtTokenProvider tokenProvider;
+    private final String timingEqualizerHash;
 
     public AuthService(
             UserRepository userRepository,
@@ -35,14 +36,16 @@ public class AuthService {
         this.roleRepository = roleRepository;
         this.passwordEncoder = passwordEncoder;
         this.tokenProvider = tokenProvider;
+        this.timingEqualizerHash = passwordEncoder.encode(java.util.UUID.randomUUID().toString());
     }
 
     @Transactional
     public AuthDto.AuthResponse login(AuthDto.LoginRequest request) {
-        User user = userRepository.findByEmail(request.getEmail().toLowerCase().trim())
-                .orElseThrow(() -> new IllegalArgumentException("Invalid email or password"));
+        User user = userRepository.findByEmail(request.getEmail().toLowerCase().trim()).orElse(null);
 
-        if (!passwordEncoder.matches(request.getPassword(), user.getPasswordHash())) {
+        // Always run one bcrypt comparison so response time doesn't reveal which emails exist
+        String hash = user != null && user.getPasswordHash() != null ? user.getPasswordHash() : timingEqualizerHash;
+        if (!passwordEncoder.matches(request.getPassword(), hash) || user == null) {
             throw new IllegalArgumentException("Invalid email or password");
         }
 

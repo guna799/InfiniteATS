@@ -1,12 +1,18 @@
 'use client';
 
-import React, { useState } from 'react';
+import React, { Suspense, useState } from 'react';
 import Link from 'next/link';
+import { useSearchParams } from 'next/navigation';
+import { Briefcase } from 'lucide-react';
 import { Input } from '@/components/ui/Input';
 import { Button } from '@/components/ui/Button';
 import { AuthCard, FormError } from '@/components/auth/AuthCard';
 
-export default function RegisterPage() {
+function RegisterForm() {
+  const searchParams = useSearchParams();
+  const nextParam = searchParams.get('next') || searchParams.get('returnTo');
+  const jobTitle = searchParams.get('jobTitle');
+
   const [form, setForm] = useState({
     firstName: '',
     lastName: '',
@@ -18,6 +24,10 @@ export default function RegisterPage() {
   });
   const [error, setError] = useState<string | null>(null);
   const [isSubmitting, setIsSubmitting] = useState(false);
+
+  const loginHref = nextParam
+    ? `/login?next=${encodeURIComponent(nextParam)}${jobTitle ? `&jobTitle=${encodeURIComponent(jobTitle)}` : ''}`
+    : '/login';
 
   const update = (field: keyof typeof form) => (e: React.ChangeEvent<HTMLInputElement>) =>
     setForm({ ...form, [field]: e.target.value });
@@ -42,7 +52,11 @@ export default function RegisterPage() {
         setError(data.error || 'Registration failed');
         return;
       }
-      window.location.assign(data.redirectTo);
+      let target = data.redirectTo || '/jobs';
+      if (nextParam && nextParam.startsWith('/') && !nextParam.startsWith('//') && !nextParam.includes('://')) {
+        target = nextParam;
+      }
+      window.location.assign(target);
     } catch {
       setError('Unable to reach the server. Please try again.');
     } finally {
@@ -54,16 +68,32 @@ export default function RegisterPage() {
     <AuthCard
       wide
       title="Create your applicant account"
-      subtitle="Register to browse open jobs, build your profile, upload your resume and apply."
+      subtitle={
+        jobTitle
+          ? `Create an account to complete your application for ${jobTitle}`
+          : 'Register to browse open jobs, build your profile, upload your resume and apply.'
+      }
       footer={
         <>
           Already have an account?{' '}
-          <Link href="/login" className="font-semibold text-indigo-600 hover:text-indigo-700">
+          <Link href={loginHref} className="font-semibold text-indigo-600 hover:text-indigo-700">
             Sign in
           </Link>
         </>
       }
     >
+      {jobTitle && (
+        <div className="mb-4 p-3.5 bg-indigo-50/80 border border-indigo-200 rounded-xl text-xs text-indigo-950 flex items-start gap-2.5">
+          <Briefcase className="h-4 w-4 text-indigo-600 mt-0.5 shrink-0" />
+          <div>
+            <span className="font-bold block">Applying for {jobTitle}</span>
+            <span className="text-[11px] text-indigo-700">
+              Create your candidate profile in seconds to submit your application.
+            </span>
+          </div>
+        </div>
+      )}
+
       <form onSubmit={handleSubmit} className="space-y-4">
         <FormError message={error} />
         <div className="grid grid-cols-1 sm:grid-cols-2 gap-4">
@@ -94,12 +124,20 @@ export default function RegisterPage() {
           onChange={update('confirmPassword')}
         />
         <Button type="submit" className="w-full" size="lg" isLoading={isSubmitting}>
-          Create account
+          {jobTitle ? 'Register & Continue Application' : 'Create account'}
         </Button>
         <p className="text-[11px] text-slate-500 text-center">
           Next you&apos;ll complete your profile and upload your resume.
         </p>
       </form>
     </AuthCard>
+  );
+}
+
+export default function RegisterPage() {
+  return (
+    <Suspense fallback={<div className="min-h-screen flex items-center justify-center text-slate-400">Loading registration...</div>}>
+      <RegisterForm />
+    </Suspense>
   );
 }

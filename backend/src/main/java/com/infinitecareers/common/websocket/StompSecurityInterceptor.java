@@ -2,7 +2,6 @@ package com.infinitecareers.common.websocket;
 
 import com.infinitecareers.common.JwtTokenProvider;
 import com.infinitecareers.common.TenantContext;
-import io.jsonwebtoken.Claims;
 import org.springframework.messaging.Message;
 import org.springframework.messaging.MessageChannel;
 import org.springframework.messaging.simp.stomp.StompCommand;
@@ -12,17 +11,15 @@ import org.springframework.messaging.support.MessageHeaderAccessor;
 import org.springframework.security.access.AccessDeniedException;
 import org.springframework.stereotype.Component;
 
-import java.util.Collections;
-import java.util.List;
-import java.util.Set;
+import java.util.Map;
 import java.util.regex.Matcher;
 import java.util.regex.Pattern;
-import java.util.stream.Collectors;
 
 @Component
 public class StompSecurityInterceptor implements ChannelInterceptor {
 
     private final JwtTokenProvider tokenProvider;
+    public static final String SESSION_CONTEXT = "tenantContext";
     private static final Pattern TENANT_TOPIC_PATTERN = Pattern.compile("^/topic/tenants/([^/]+)/.*$");
 
     public StompSecurityInterceptor(JwtTokenProvider tokenProvider) {
@@ -32,63 +29,57 @@ public class StompSecurityInterceptor implements ChannelInterceptor {
     @Override
     public Message<?> preSend(Message<?> message, MessageChannel channel) {
         StompHeaderAccessor accessor = MessageHeaderAccessor.getAccessor(message, StompHeaderAccessor.class);
-        if (accessor == null) {
+        if (accessor == null || accessor.getCommand() == null) {
             return message;
         }
+        Map<String, Object> session = accessor.getSessionAttributes();
 
-        // 1. Authenticate during CONNECT
-        if (StompCommand.CONNECT.equals(accessor.getCommand())) {
-            String authHeader = accessor.getFirstNativeHeader("Authorization");
-            if (authHeader != null && authHeader.startsWith("Bearer ")) {
-                String token = authHeader.substring(7);
-                try {
-                    if (tokenProvider.validateToken(token)) {
-                        Claims claims = tokenProvider.getClaimsFromToken(token);
-                        String userId = claims.getSubject();
-                        String email = claims.get("email", String.class);
-                        String tenantId = claims.get("tenantId", String.class);
-                        String dataScope = claims.get("dataScope", String.class);
-
-                        List<?> rawRoles = claims.get("roles", List.class);
-                        Set<String> roles = rawRoles != null 
-                                ? rawRoles.stream().map(Object::toString).collect(Collectors.toSet())
-                                : Collections.emptySet();
-
-                        List<?> rawPermissions = claims.get("permissions", List.class);
-                        Set<String> permissions = rawPermissions != null
-                                ? rawPermissions.stream().map(Object::toString).collect(Collectors.toSet())
-                                : Collections.emptySet();
-
-                        TenantContext ctx = new TenantContext(tenantId, userId, email, roles, permissions, dataScope);
-                        accessor.getSessionAttributes().put("tenantContext", ctx);
-                        accessor.setUser(new StompPrincipal(userId, tenantId));
-                    }
-                } catch (Exception e) {
-                    throw new AccessDeniedException("Invalid JWT token for WebSocket authentication");
+        switch (accessor.getCommand()) {
+            case CONNECT -> {
+                // Bearer header (non-browser clients) takes precedence over the handshake cookie
+                String authHeader = accessor.getFirstNativeHeader("Authorization");
+                TenantContext ctx = authHeader != null && authHeader.startsWith("Bearer ")
+                        ? tokenProvider.parseAccessToken(authHeader.substring(7))
+                            .orElseThrow(() -> new AccessDeniedException("Invalid JWT token for WebSocket authentication"))
+                        : session != null ? (TenantContext) session.get(SESSION_CONTEXT) : null;
+                if (ctx == null || ctx.getTenantId() == null) {
+                    throw new AccessDeniedException("WebSocket authentication required");
                 }
+                if (session != null) {
+                    session.put(SESSION_CONTEXT, ctx);
+                }
+                accessor.setUser(new StompPrincipal(ctx.getUserId(), ctx.getTenantId()));
             }
-        }
-
-        // 2. Enforce Multi-Tenant Isolation during SUBSCRIBE
-        if (StompCommand.SUBSCRIBE.equals(accessor.getCommand())) {
-            String destination = accessor.getDestination();
-            if (destination != null) {
+            case SUBSCRIBE -> {
+                TenantContext ctx = session != null ? (TenantContext) session.get(SESSION_CONTEXT) : null;
+                if (ctx == null) {
+                    throw new AccessDeniedException("WebSocket authentication required");
+                }
+                String destination = accessor.getDestination();
+                if (destination == null) {
+                    throw new AccessDeniedException("Subscription destination required");
+                }
                 Matcher matcher = TENANT_TOPIC_PATTERN.matcher(destination);
                 if (matcher.matches()) {
                     String requestedTenantId = matcher.group(1);
-                    TenantContext ctx = (TenantContext) accessor.getSessionAttributes().get("tenantContext");
-                    
-                    // If session is authenticated, verify tenant matching
-                    if (ctx != null && !requestedTenantId.equalsIgnoreCase(ctx.getTenantId())) {
+                    if (!requestedTenantId.equals(ctx.getTenantId())) {
                         throw new AccessDeniedException(String.format(
                                 "Cross-tenant subscription prohibited! User from tenant [%s] cannot subscribe to [%s]",
                                 ctx.getTenantId(), requestedTenantId
                         ));
                     }
+                } else if (!destination.startsWith("/user/queue/")) {
+                    throw new AccessDeniedException("Subscription to " + destination + " is not allowed");
                 }
             }
+            case SEND -> {
+                if (session == null || session.get(SESSION_CONTEXT) == null) {
+                    throw new AccessDeniedException("WebSocket authentication required");
+                }
+            }
+            default -> {
+            }
         }
-
         return message;
     }
 

@@ -38,6 +38,14 @@ spec:
         - name: APP_JWT_SECRET
           valueFrom:
             secretKeyRef: {name: infinitecareers-secrets, key: APP_JWT_SECRET}
+        # Optional: sets passwords for existing staff users at startup (comma-separated emails).
+        # Staff sign in through Spring, and seeded users ship without a usable password.
+        - name: APP_BOOTSTRAP_ADMIN_EMAIL
+          valueFrom:
+            secretKeyRef: {name: infinitecareers-secrets, key: BOOTSTRAP_ADMIN_EMAIL, optional: true}
+        - name: APP_BOOTSTRAP_ADMIN_PASSWORD
+          valueFrom:
+            secretKeyRef: {name: infinitecareers-secrets, key: BOOTSTRAP_ADMIN_PASSWORD, optional: true}
         resources:
           requests: {cpu: 250m, memory: 512Mi}
           limits: {memory: 1Gi}

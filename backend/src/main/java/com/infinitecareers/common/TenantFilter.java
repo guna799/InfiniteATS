@@ -1,6 +1,5 @@
 package com.infinitecareers.common;
 
-import io.jsonwebtoken.Claims;
 import jakarta.servlet.FilterChain;
 import jakarta.servlet.ServletException;
 import jakarta.servlet.http.HttpServletRequest;
@@ -18,6 +17,9 @@ import java.util.stream.Collectors;
 
 @Component
 public class TenantFilter extends OncePerRequestFilter {
+
+    public static final String CSRF_HEADER = "X-Requested-With";
+    public static final String CSRF_HEADER_VALUE = "InfiniteCareers";
 
     private final JwtTokenProvider tokenProvider;
     private final boolean allowTenantHeader;
@@ -40,39 +42,27 @@ public class TenantFilter extends OncePerRequestFilter {
         org.slf4j.MDC.put("request_id", correlationId);
 
         try {
-            String jwt = getJwtFromRequest(request);
-            if (StringUtils.hasText(jwt) && tokenProvider.validateToken(jwt)) {
-                Claims claims = tokenProvider.getClaimsFromToken(jwt);
-                String userId = claims.getSubject();
-                String email = claims.get("email", String.class);
-                String tenantId = claims.get("tenantId", String.class);
-                String dataScope = claims.get("dataScope", String.class);
+            String bearer = getBearerToken(request);
+            String cookieToken = bearer == null ? getCookieToken(request) : null;
+            Optional<TenantContext> authenticated = tokenProvider.parseAccessToken(bearer != null ? bearer : cookieToken);
 
-                org.slf4j.MDC.put("tenant_id", tenantId);
-                org.slf4j.MDC.put("user_id", userId);
-
-                List<?> rawRoles = claims.get("roles", List.class);
-                Set<String> roles = rawRoles != null 
-                        ? rawRoles.stream().map(Object::toString).collect(Collectors.toSet())
-                        : Collections.emptySet();
-
-                List<?> rawPermissions = claims.get("permissions", List.class);
-                Set<String> permissions = rawPermissions != null
-                        ? rawPermissions.stream().map(Object::toString).collect(Collectors.toSet())
-                        : Collections.emptySet();
-
-                TenantContext context = new TenantContext(tenantId, userId, email, roles, permissions, dataScope);
+            if (authenticated.isPresent()) {
+                // Browsers send cookies on cross-site requests; a custom header cannot be added cross-site
+                // without a CORS preflight, so requiring it blocks CSRF on cookie-authenticated writes.
+                if (cookieToken != null && !isSafeMethod(request) && !CSRF_HEADER_VALUE.equals(request.getHeader(CSRF_HEADER))) {
+                    response.sendError(HttpServletResponse.SC_FORBIDDEN, "Missing " + CSRF_HEADER + " header");
+                    return;
+                }
+                TenantContext context = authenticated.get();
+                org.slf4j.MDC.put("tenant_id", context.getTenantId());
+                org.slf4j.MDC.put("user_id", context.getUserId());
                 TenantContextHolder.setContext(context);
 
-                // Set Spring Security Context
                 List<SimpleGrantedAuthority> authorities = new ArrayList<>();
-                roles.forEach(r -> authorities.add(new SimpleGrantedAuthority("ROLE_" + r)));
-                permissions.forEach(p -> authorities.add(new SimpleGrantedAuthority(p)));
-
-                UsernamePasswordAuthenticationToken authentication = new UsernamePasswordAuthenticationToken(
-                        userId, null, authorities
-                );
-                SecurityContextHolder.getContext().setAuthentication(authentication);
+                context.getRoles().forEach(r -> authorities.add(new SimpleGrantedAuthority("ROLE_" + r)));
+                context.getPermissions().forEach(p -> authorities.add(new SimpleGrantedAuthority(p)));
+                SecurityContextHolder.getContext().setAuthentication(
+                        new UsernamePasswordAuthenticationToken(context.getUserId(), null, authorities));
             } else {
                 // Local/test profiles only: unauthenticated X-Tenant-ID header fallback
                 String headerTenantId = allowTenantHeader ? request.getHeader("X-Tenant-ID") : null;
@@ -98,11 +88,26 @@ public class TenantFilter extends OncePerRequestFilter {
         }
     }
 
-    private String getJwtFromRequest(HttpServletRequest request) {
+    private static boolean isSafeMethod(HttpServletRequest request) {
+        return Set.of("GET", "HEAD", "OPTIONS").contains(request.getMethod());
+    }
+
+    private static String getBearerToken(HttpServletRequest request) {
         String bearerToken = request.getHeader("Authorization");
         if (StringUtils.hasText(bearerToken) && bearerToken.startsWith("Bearer ")) {
             return bearerToken.substring(7);
         }
         return null;
+    }
+
+    private static String getCookieToken(HttpServletRequest request) {
+        if (request.getCookies() == null) {
+            return null;
+        }
+        return Arrays.stream(request.getCookies())
+                .filter(c -> JwtTokenProvider.ACCESS_COOKIE.equals(c.getName()) && StringUtils.hasText(c.getValue()))
+                .map(jakarta.servlet.http.Cookie::getValue)
+                .findFirst()
+                .orElse(null);
     }
 }

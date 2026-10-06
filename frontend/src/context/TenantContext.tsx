@@ -42,6 +42,9 @@ interface TenantContextType {
   users: User[];
   isLoading: boolean;
   sessionKind: 'staff' | 'candidate' | null;
+  /** Spring tenant/user ids for realtime subscriptions and "was this me?" checks (staff only). */
+  tenantId: string | null;
+  backendUserId: string | null;
   refreshSession: () => Promise<void>;
   logout: () => Promise<void>;
   showToast: (title: string, message?: string, type?: 'success' | 'error' | 'info' | 'warning') => void;
@@ -56,6 +59,8 @@ export function TenantProvider({ children }: { children: ReactNode }) {
   const [users, setUsers] = useState<User[]>([]);
   const [isLoading, setIsLoading] = useState(true);
   const [sessionKind, setSessionKind] = useState<'staff' | 'candidate' | null>(null);
+  const [tenantId, setTenantId] = useState<string | null>(null);
+  const [backendUserId, setBackendUserId] = useState<string | null>(null);
   const [toasts, setToasts] = useState<ToastNotification[]>([]);
 
   const fetchSession = async () => {
@@ -65,6 +70,8 @@ export function TenantProvider({ children }: { children: ReactNode }) {
       if (res.ok) {
         const data = await res.json();
         setSessionKind(data.kind);
+        setTenantId(data.tenantId ?? null);
+        setBackendUserId(data.backendUserId ?? null);
         setOrganization(data.organization || null);
         setOrganizations(data.organizations || []);
         setCurrentUser(data.currentUser);
@@ -103,6 +110,8 @@ export function TenantProvider({ children }: { children: ReactNode }) {
         users,
         isLoading,
         sessionKind,
+        tenantId,
+        backendUserId,
         refreshSession: fetchSession,
         logout,
         showToast,

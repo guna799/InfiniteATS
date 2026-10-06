@@ -2,15 +2,24 @@ import { NextRequest, NextResponse } from 'next/server';
 import { SESSION_COOKIE, verifySessionToken } from '@/lib/session';
 
 // Reachable without signing in
-const PUBLIC_PAGES = ['/login', '/register'];
-const PUBLIC_APIS = ['/api/auth/login', '/api/auth/register', '/api/auth/logout'];
+const PUBLIC_PAGES = ['/login', '/register', '/careers', '/jobs', '/portal'];
+const PUBLIC_APIS = ['/api/auth/', '/api/public/', '/api/candidate/jobs'];
 
 // The only areas a signed-in applicant may use
-const CANDIDATE_PAGES = ['/jobs', '/profile', '/my-applications'];
-const CANDIDATE_APIS = ['/api/candidate/', '/api/auth/'];
+const CANDIDATE_PAGES = ['/careers', '/jobs', '/profile', '/my-applications', '/portal'];
+const CANDIDATE_APIS = ['/api/candidate/', '/api/auth/', '/api/public/'];
 
 const matches = (pathname: string, prefixes: string[]) =>
   prefixes.some((p) => pathname === p || pathname.startsWith(p.endsWith('/') ? p : `${p}/`));
+
+function sanitizeRedirect(url: string | null, fallback: string): string {
+  if (!url) return fallback;
+  // Ensure same-site relative path starting with a single '/'
+  if (url.startsWith('/') && !url.startsWith('//') && !url.includes('://')) {
+    return url;
+  }
+  return fallback;
+}
 
 function deny(request: NextRequest, status: 401 | 403, redirectTo: string) {
   if (request.nextUrl.pathname.startsWith('/api/')) {
@@ -31,16 +40,30 @@ export async function middleware(request: NextRequest) {
   const session = await verifySessionToken(request.cookies.get(SESSION_COOKIE)?.value);
   const home = session?.kind === 'candidate' ? '/jobs' : '/';
 
+  // 1. Auth pages (/login, /register): if already logged in, redirect to home or safe next param
+  if (pathname === '/login' || pathname === '/register') {
+    if (session) {
+      const nextParam = searchParams.get('next') || searchParams.get('returnTo');
+      const target = sanitizeRedirect(nextParam, home);
+      return NextResponse.redirect(new URL(target, request.url));
+    }
+    return NextResponse.next();
+  }
+
+  // 2. Public pages (/careers, /jobs, /portal) & Public APIs
   if (matches(pathname, PUBLIC_PAGES)) {
-    return session ? deny(request, 403, home) : NextResponse.next();
+    return NextResponse.next();
   }
   if (matches(pathname, PUBLIC_APIS)) {
     return NextResponse.next();
   }
+
+  // 3. If unauthenticated and accessing protected routes
   if (!session) {
     return deny(request, 401, '/login');
   }
 
+  // 4. If logged in as Candidate (applicant)
   if (session.kind === 'candidate') {
     if (matches(pathname, CANDIDATE_PAGES) || matches(pathname, CANDIDATE_APIS)) {
       return NextResponse.next();
@@ -48,13 +71,22 @@ export async function middleware(request: NextRequest) {
     return deny(request, 403, '/jobs');
   }
 
-  // Staff
-  if (matches(pathname, CANDIDATE_PAGES) || pathname.startsWith('/api/candidate/')) {
+  // 5. Staff users
+  if (pathname === '/profile' || pathname === '/my-applications') {
     return deny(request, 403, '/');
   }
-  // Staff APIs take the tenant as ?orgId= and treat a missing one as "all orgs";
-  // pin it to the signed-in user's org.
-  if (pathname.startsWith('/api/') && session.orgId) {
+
+  // Legacy SQLite APIs take the tenant as ?orgId= and treat a missing one as "all orgs";
+  // pin it to the signed-in user's org, and refuse them entirely if the user has none.
+  const legacyApi =
+    pathname.startsWith('/api/') &&
+    !pathname.startsWith('/api/auth/') &&
+    !pathname.startsWith('/api/public/') &&
+    !pathname.startsWith('/api/v1/');
+  if (legacyApi && !session.orgId) {
+    return deny(request, 403, '/');
+  }
+  if (legacyApi && session.orgId) {
     const requestedOrg = searchParams.get('orgId');
     if (requestedOrg && requestedOrg !== session.orgId) {
       return deny(request, 403, '/');
@@ -65,9 +97,11 @@ export async function middleware(request: NextRequest) {
       return NextResponse.rewrite(url);
     }
   }
+
   return NextResponse.next();
 }
 
 export const config = {
-  matcher: ['/((?!_next/static|_next/image|favicon.ico).*)'],
+  // /api/v1 and /ws belong to Spring (its own JWT auth); Next only proxies them in local development
+  matcher: ['/((?!_next/static|_next/image|favicon.ico|api/v1/|ws/).*)'],
 };

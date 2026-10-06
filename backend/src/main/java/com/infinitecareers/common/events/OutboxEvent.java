@@ -33,7 +33,7 @@ public class OutboxEvent {
     private String headersJson;
 
     @Column(length = 32, nullable = false)
-    private String status = "PENDING"; // PENDING, PUBLISHED, FAILED
+    private String status = "PENDING"; // PENDING, PROCESSING, PUBLISHED, FAILED
 
     @Column(name = "retry_count", nullable = false)
     private int retryCount = 0;
@@ -46,6 +46,9 @@ public class OutboxEvent {
 
     @Column(name = "published_at")
     private Instant publishedAt;
+
+    @Column(name = "claimed_at")
+    private Instant claimedAt;
 
     public OutboxEvent() {}
 
@@ -97,4 +100,6 @@ public class OutboxEvent {
 
     public Instant getPublishedAt() { return publishedAt; }
     public void setPublishedAt(Instant publishedAt) { this.publishedAt = publishedAt; }
+    public Instant getClaimedAt() { return claimedAt; }
+    public void setClaimedAt(Instant claimedAt) { this.claimedAt = claimedAt; }
 }
