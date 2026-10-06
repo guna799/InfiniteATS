@@ -17,9 +17,20 @@ import java.util.Map;
 public class OfferController {
 
     private final OfferService offerService;
+    private final OfferLetterService offerLetterService;
 
-    public OfferController(OfferService offerService) {
+    public OfferController(OfferService offerService, OfferLetterService offerLetterService) {
         this.offerService = offerService;
+        this.offerLetterService = offerLetterService;
+    }
+
+    @PostMapping("/{id}/generate-document")
+    @Operation(summary = "Generate official offer letter PDF, compute SHA-256 hash, and store in S3")
+    public ResponseEntity<ApiResponse<com.infinitecareers.modules.documents.Document>> generateOfferDocument(
+            @PathVariable String id,
+            @RequestBody(required = false) Map<String, Object> contextualDetails) {
+        com.infinitecareers.modules.documents.Document doc = offerLetterService.generateAndStoreOfferLetter(id, contextualDetails);
+        return ResponseEntity.status(HttpStatus.CREATED).body(ApiResponse.success(doc));
     }
 
     @GetMapping

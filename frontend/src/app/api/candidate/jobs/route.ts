@@ -1,12 +1,11 @@
 import { NextResponse } from 'next/server';
 import prisma from '@/lib/prisma';
-import { requireCandidate } from '@/lib/auth';
+import { getSession } from '@/lib/auth';
 
 export const dynamic = 'force-dynamic';
 
 export async function GET() {
-  const { session, error } = await requireCandidate();
-  if (error) return error;
+  const session = await getSession();
 
   const [jobs, applied] = await Promise.all([
     prisma.jobRequisition.findMany({
@@ -31,14 +30,18 @@ export async function GET() {
       },
       orderBy: { createdAt: 'desc' },
     }),
-    prisma.application.findMany({
-      where: { candidate: { accountId: session.sub } },
-      select: { requisitionId: true, status: true },
-    }),
+    session?.kind === 'candidate' && session?.sub
+      ? prisma.application.findMany({
+          where: { candidate: { accountId: session.sub } },
+          select: { requisitionId: true, status: true },
+        })
+      : Promise.resolve([]),
   ]);
 
   const appliedStatus = new Map(applied.map((a) => [a.requisitionId, a.status]));
   return NextResponse.json({
+    isAuthenticated: session?.kind === 'candidate',
+    user: session ? { name: session.name, email: session.email, kind: session.kind } : null,
     jobs: jobs.map((j) => ({ ...j, applicationStatus: appliedStatus.get(j.id) || null })),
   });
 }

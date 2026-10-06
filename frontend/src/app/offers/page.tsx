@@ -151,6 +151,48 @@ function OffersContent() {
     }
   };
 
+  const [isGeneratingPdf, setIsGeneratingPdf] = useState<string | null>(null);
+
+  const handleGeneratePdfLetter = async (offerId: string) => {
+    setIsGeneratingPdf(offerId);
+    try {
+      const res = await fetch(`/api/offers/${offerId}/generate-letter`, {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify({ actorId: currentUser?.id || 'admin' }),
+      });
+      const data = await res.json();
+      if (res.ok && data.success) {
+        showToast(
+          'Official Offer PDF Generated & Stored in S3',
+          `Version ${data.document.version} • SHA-256: ${data.document.sha256Hash?.slice(0, 16)}...`,
+          'success'
+        );
+        fetchOffers();
+      } else {
+        showToast('Generation Failed', data.error || 'Could not generate offer PDF', 'error');
+      }
+    } catch (err: any) {
+      showToast('Error', err.message, 'error');
+    } finally {
+      setIsGeneratingPdf(null);
+    }
+  };
+
+  const handleDownloadPresignedDocument = async (docId: string) => {
+    try {
+      const res = await fetch(`/api/documents/${docId}/download`);
+      const data = await res.json();
+      if (res.ok && data.downloadUrl) {
+        window.open(data.downloadUrl, '_blank');
+      } else {
+        showToast('Download Error', data.error || 'Failed to generate signed download URL', 'error');
+      }
+    } catch (err: any) {
+      showToast('Error', err.message, 'error');
+    }
+  };
+
   return (
     <div className="space-y-6 animate-fadeIn">
       {/* Header */}
@@ -216,11 +258,30 @@ function OffersContent() {
                 <div className="flex flex-wrap items-center gap-2 lg:self-center">
                   <button
                     onClick={() => setViewingOffer(off)}
-                    className="px-3.5 py-1.5 bg-slate-100 hover:bg-slate-200 text-slate-700 rounded-xl text-xs font-semibold flex items-center gap-1.5 transition"
+                    className="px-3 py-1.5 bg-slate-100 hover:bg-slate-200 text-slate-700 rounded-xl text-xs font-semibold flex items-center gap-1.5 transition"
                   >
                     <FileText className="h-3.5 w-3.5" />
-                    <span>View Letter</span>
+                    <span>View Letter Text</span>
                   </button>
+
+                  <button
+                    onClick={() => handleGeneratePdfLetter(off.id)}
+                    disabled={isGeneratingPdf === off.id}
+                    className="px-3.5 py-1.5 bg-violet-600 hover:bg-violet-700 text-white rounded-xl text-xs font-semibold shadow-sm flex items-center gap-1.5 transition disabled:opacity-50"
+                  >
+                    <Sparkles className="h-3.5 w-3.5" />
+                    <span>{isGeneratingPdf === off.id ? 'Generating S3 PDF...' : 'Generate S3 PDF'}</span>
+                  </button>
+
+                  {off.documents && off.documents.length > 0 && (
+                    <button
+                      onClick={() => handleDownloadPresignedDocument(off.documents[off.documents.length - 1].id)}
+                      className="px-3.5 py-1.5 bg-slate-900 hover:bg-black text-white rounded-xl text-xs font-semibold shadow-sm flex items-center gap-1.5 transition"
+                    >
+                      <FileCheck2 className="h-3.5 w-3.5 text-emerald-400" />
+                      <span>Download S3 PDF (v{off.documents[off.documents.length - 1].version})</span>
+                    </button>
+                  )}
 
                   {off.status === 'APPROVED' && (
                     <button
@@ -245,6 +306,25 @@ function OffersContent() {
                 </div>
 
               </div>
+
+              {/* S3 Document Integrity Badge if Document Generated */}
+              {off.documents && off.documents.length > 0 && (
+                <div className="p-3 bg-violet-50/70 border border-violet-200 rounded-xl text-xs flex flex-wrap items-center justify-between gap-2">
+                  <div className="flex items-center gap-2">
+                    <ShieldCheck className="h-4 w-4 text-violet-600" />
+                    <span className="font-bold text-violet-950">AWS S3 Official Offer Document:</span>
+                    <span className="text-violet-800 font-mono text-[11px]">{off.documents[off.documents.length - 1].s3Key}</span>
+                  </div>
+                  <div className="flex items-center gap-2">
+                    <span className="text-[10px] font-bold px-2 py-0.5 rounded bg-violet-200 text-violet-900">
+                      Version {off.documents[off.documents.length - 1].version}
+                    </span>
+                    <span className="text-[10px] font-mono text-slate-600 bg-white px-2 py-0.5 rounded border">
+                      SHA-256: {off.documents[off.documents.length - 1].sha256Hash?.slice(0, 16)}...
+                    </span>
+                  </div>
+                </div>
+              )}
 
               {/* Compensation Breakdown Card */}
               <div className="grid grid-cols-2 sm:grid-cols-4 gap-3 bg-slate-50 p-4 rounded-xl border border-slate-100 text-xs">

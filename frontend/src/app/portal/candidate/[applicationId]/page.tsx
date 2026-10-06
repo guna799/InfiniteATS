@@ -18,8 +18,59 @@ import {
   AlertCircle,
   Calendar,
   Laptop,
+  UploadCloud,
+  FileText,
+  Download,
+  ShieldCheck,
+  Ban,
+  Check,
+  RefreshCw,
 } from 'lucide-react';
-import { STAGES } from '@/lib/constants';
+
+const REQUIRED_ONBOARDING_DOCS = [
+  {
+    type: 'PAN',
+    category: 'IDENTITY',
+    title: 'PAN Card',
+    description: 'Permanent Account Number card for Indian Income Tax compliance.',
+    required: true,
+  },
+  {
+    type: 'AADHAAR',
+    category: 'IDENTITY',
+    title: 'Aadhaar Card',
+    description: 'UIDAI identity document for identity verification and PF/ESI linking.',
+    required: true,
+  },
+  {
+    type: 'HIGHEST_EDUCATION_CERTIFICATE',
+    category: 'EDUCATION',
+    title: 'Highest Degree Certificate',
+    description: 'Final degree certificate, provisional certificate or transcript.',
+    required: true,
+  },
+  {
+    type: 'EXPERIENCE_LETTER',
+    category: 'EXPERIENCE',
+    title: 'Previous Experience / Relieving Letter',
+    description: 'Relieving letter or service certificate from your immediate prior employer.',
+    required: true,
+  },
+  {
+    type: 'BANK_PROOF',
+    category: 'BANKING',
+    title: 'Bank Proof / Cancelled Cheque',
+    description: 'Cancelled cheque or bank statement showing your name, account number & IFSC.',
+    required: true,
+  },
+  {
+    type: 'FORM_11',
+    category: 'STATUTORY',
+    title: 'Form 11 (Statutory Declaration)',
+    description: 'EPFO Form 11 declaration for Provident Fund continuation.',
+    required: false,
+  },
+];
 
 export default function CandidatePortalPage() {
   const params = useParams();
@@ -28,6 +79,7 @@ export default function CandidatePortalPage() {
   const [application, setApplication] = useState<any>(null);
   const [candidate, setCandidate] = useState<any>(null);
   const [offer, setOffer] = useState<any>(null);
+  const [candidateDocs, setCandidateDocs] = useState<any[]>([]);
   const [onboardingTasks, setOnboardingTasks] = useState<any[]>([]);
   const [isLoading, setIsLoading] = useState(true);
 
@@ -37,11 +89,12 @@ export default function CandidatePortalPage() {
   const [isSigning, setIsSigning] = useState(false);
   const [isCelebration, setIsCelebration] = useState(false);
 
+  // Uploading state
+  const [uploadingDocType, setUploadingDocType] = useState<string | null>(null);
+
   const fetchApplicationDetails = async () => {
     setIsLoading(true);
     try {
-      const res = await fetch(`/api/candidates?search=`);
-      // Or fetch from candidates endpoint
       const candRes = await fetch(`/api/candidates`);
       if (candRes.ok) {
         const data = await candRes.json();
@@ -53,6 +106,12 @@ export default function CandidatePortalPage() {
             setApplication(app);
             if (app.offers?.length > 0) {
               setOffer(app.offers[0]);
+            }
+            // Fetch candidate documents
+            const docRes = await fetch(`/api/documents?candidateId=${c.id}`);
+            if (docRes.ok) {
+              const dData = await docRes.json();
+              setCandidateDocs(dData.documents || []);
             }
             break;
           }
@@ -107,6 +166,50 @@ export default function CandidatePortalPage() {
     }
   };
 
+  const handleCandidateFileUpload = async (docType: string, category: string, file: File) => {
+    if (!candidate || !application) return;
+    setUploadingDocType(docType);
+
+    try {
+      const formData = new FormData();
+      formData.append('file', file);
+      formData.append('orgId', application.organizationId || application.requisition?.organizationId || 'tenant-acme-tech');
+      formData.append('candidateId', candidate.id);
+      formData.append('documentType', docType);
+      formData.append('category', category);
+
+      const res = await fetch('/api/documents', {
+        method: 'POST',
+        body: formData,
+      });
+
+      if (res.ok) {
+        await fetchApplicationDetails();
+      } else {
+        const err = await res.json();
+        alert(err.error || 'Failed to upload document');
+      }
+    } catch (err: any) {
+      alert(err.message || 'Upload failed');
+    } finally {
+      setUploadingDocType(null);
+    }
+  };
+
+  const handleDownloadDoc = async (docId: string) => {
+    try {
+      const res = await fetch(`/api/documents/${docId}/download`);
+      const data = await res.json();
+      if (res.ok && data.downloadUrl) {
+        window.open(data.downloadUrl, '_blank');
+      } else {
+        alert(data.error || 'Could not download document');
+      }
+    } catch (err: any) {
+      alert(err.message || 'Download failed');
+    }
+  };
+
   if (isLoading) {
     return (
       <div className="min-h-screen flex items-center justify-center bg-slate-50">
@@ -130,7 +233,7 @@ export default function CandidatePortalPage() {
             </div>
             <div>
               <span className="font-bold text-sm tracking-tight text-slate-900">InfiniteCareers Candidate Portal</span>
-              <span className="text-[11px] text-slate-500 block">Candidate Self-Service & Onboarding</span>
+              <span className="text-[11px] text-slate-500 block">Candidate Self-Service, Offer E-Sign & Onboarding Vault</span>
             </div>
           </div>
 
@@ -194,7 +297,7 @@ export default function CandidatePortalPage() {
                 <span className="text-[10px] font-mono font-bold text-slate-500 bg-slate-100 px-2 py-0.5 rounded">
                   {offer.offerNumber}
                 </span>
-                <h2 className="text-lg font-bold text-slate-900 mt-1">Employment Offer of Employment</h2>
+                <h2 className="text-lg font-bold text-slate-900 mt-1">Employment Offer Package</h2>
               </div>
 
               <span
@@ -281,14 +384,135 @@ export default function CandidatePortalPage() {
                   <span>Offer Successfully Accepted & Digitally Signed!</span>
                 </div>
                 <p className="text-emerald-800">
-                  Congratulations! Your employee onboarding workspace has been initiated. Complete the checklist below before your first day.
+                  Congratulations! Your employee onboarding workspace has been initiated. Complete your document checklist below.
                 </p>
               </div>
             )}
           </div>
         )}
 
-        {/* Preboarding Checklist Section for New Hire */}
+        {/* CANDIDATE ONBOARDING DOCUMENT CHECKLIST (AWS S3 VAULT) */}
+        <div className="bg-white p-6 rounded-2xl border border-slate-200 shadow-enterprise space-y-4">
+          <div className="flex items-center justify-between border-b pb-3">
+            <div>
+              <div className="flex items-center gap-2">
+                <ShieldCheck className="h-5 w-5 text-violet-600" />
+                <h2 className="text-base font-bold text-slate-900">Onboarding Document Checklist (S3 Vault)</h2>
+              </div>
+              <p className="text-xs text-slate-500 mt-0.5">
+                Upload your statutory identity, educational and banking proofs. Files are stored securely in AWS S3.
+              </p>
+            </div>
+            <button
+              onClick={fetchApplicationDetails}
+              className="p-2 text-slate-400 hover:text-slate-600 transition"
+              title="Refresh status"
+            >
+              <RefreshCw className="h-4 w-4" />
+            </button>
+          </div>
+
+          <div className="divide-y divide-slate-100">
+            {REQUIRED_ONBOARDING_DOCS.map((reqDoc) => {
+              const submittedDoc = candidateDocs.find((d) => d.documentType === reqDoc.type);
+              const isUploading = uploadingDocType === reqDoc.type;
+
+              return (
+                <div key={reqDoc.type} className="py-4 flex flex-col sm:flex-row sm:items-center justify-between gap-4">
+                  <div className="space-y-1 max-w-md">
+                    <div className="flex items-center gap-2">
+                      <span className="font-bold text-xs text-slate-900">{reqDoc.title}</span>
+                      {reqDoc.required ? (
+                        <span className="text-[10px] font-bold text-rose-600 bg-rose-50 px-1.5 py-0.2 rounded border border-rose-200">Required</span>
+                      ) : (
+                        <span className="text-[10px] font-semibold text-slate-500 bg-slate-100 px-1.5 py-0.2 rounded">Optional</span>
+                      )}
+                    </div>
+                    <p className="text-[11px] text-slate-500">{reqDoc.description}</p>
+                    
+                    {submittedDoc && (
+                      <div className="flex flex-wrap items-center gap-2 text-[10px] text-slate-400 pt-0.5">
+                        <span className="font-mono text-violet-700 bg-violet-50 px-1.5 py-0.5 rounded border border-violet-200">
+                          {submittedDoc.originalFilename} ({(submittedDoc.fileSize / 1024).toFixed(1)} KB)
+                        </span>
+                        <span className="font-mono text-slate-500">
+                          SHA-256: {submittedDoc.sha256Hash?.slice(0, 12)}...
+                        </span>
+                      </div>
+                    )}
+
+                    {submittedDoc?.status === 'REJECTED' && (
+                      <div className="p-2 bg-rose-50 border border-rose-200 rounded-lg text-rose-800 text-[11px] flex items-center gap-1.5 mt-1">
+                        <AlertCircle className="h-3.5 w-3.5 shrink-0 text-rose-600" />
+                        <span>Rejection Reason: {submittedDoc.rejectionReason || 'Document illegible or invalid.'} Please re-upload.</span>
+                      </div>
+                    )}
+                  </div>
+
+                  <div className="flex items-center gap-2 shrink-0">
+                    {submittedDoc ? (
+                      <div className="flex items-center gap-2">
+                        <span
+                          className={`text-[10px] font-bold px-2.5 py-1 rounded-full ${
+                            submittedDoc.status === 'VERIFIED'
+                              ? 'bg-emerald-100 text-emerald-800'
+                              : submittedDoc.status === 'REJECTED'
+                              ? 'bg-rose-100 text-rose-800'
+                              : 'bg-amber-100 text-amber-800'
+                          }`}
+                        >
+                          {submittedDoc.status === 'VERIFIED' ? '✓ Verified' : submittedDoc.status === 'REJECTED' ? '✕ Rejected' : '⟳ Submitted (In Review)'}
+                        </span>
+
+                        <button
+                          onClick={() => handleDownloadDoc(submittedDoc.id)}
+                          className="p-1.5 bg-slate-100 hover:bg-slate-200 text-slate-700 rounded-lg transition"
+                          title="Download Submitted Copy"
+                        >
+                          <Download className="h-3.5 w-3.5" />
+                        </button>
+
+                        {(submittedDoc.status === 'REJECTED' || submittedDoc.status === 'PENDING_VERIFICATION') && (
+                          <label className="cursor-pointer px-3 py-1.5 bg-slate-800 hover:bg-slate-900 text-white rounded-lg text-xs font-semibold shadow-sm inline-flex items-center gap-1.5 transition">
+                            <UploadCloud className="h-3.5 w-3.5" />
+                            <span>{isUploading ? 'Uploading...' : 'Replace'}</span>
+                            <input
+                              type="file"
+                              disabled={isUploading}
+                              className="hidden"
+                              accept=".pdf,.docx,.doc,.jpg,.jpeg,.png"
+                              onChange={(e) => {
+                                const file = e.target.files?.[0];
+                                if (file) handleCandidateFileUpload(reqDoc.type, reqDoc.category, file);
+                              }}
+                            />
+                          </label>
+                        )}
+                      </div>
+                    ) : (
+                      <label className="cursor-pointer px-3.5 py-1.5 bg-violet-600 hover:bg-violet-700 text-white rounded-xl text-xs font-semibold shadow-sm inline-flex items-center gap-1.5 transition">
+                        <UploadCloud className="h-4 w-4" />
+                        <span>{isUploading ? 'Uploading to S3...' : 'Upload Document'}</span>
+                        <input
+                          type="file"
+                          disabled={isUploading}
+                          className="hidden"
+                          accept=".pdf,.docx,.doc,.jpg,.jpeg,.png"
+                          onChange={(e) => {
+                            const file = e.target.files?.[0];
+                            if (file) handleCandidateFileUpload(reqDoc.type, reqDoc.category, file);
+                          }}
+                        />
+                      </label>
+                    )}
+                  </div>
+                </div>
+              );
+            })}
+          </div>
+        </div>
+
+        {/* Preboarding Tasks Checklist */}
         {isOfferAccepted && onboardingTasks.length > 0 && (
           <div className="bg-white p-6 rounded-2xl border border-slate-200 shadow-enterprise space-y-4 text-xs">
             <h2 className="text-base font-bold text-slate-900">Your First-Day Preboarding Checklist</h2>
