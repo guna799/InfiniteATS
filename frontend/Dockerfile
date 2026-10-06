@@ -3,7 +3,7 @@
 # =========================================================================
 
 # 1. Base Node Image
-FROM node:18-alpine AS base
+FROM node:22-alpine AS base
 RUN apk add --no-cache libc6-compat openssl
 WORKDIR /app
 
@@ -23,6 +23,9 @@ ENV NODE_ENV=production
 # Build-time only; the runtime path is injected by the deployment
 ENV DATABASE_URL="file:./dev.db"
 RUN npx prisma generate
+# Seed database shipped in the image (dev.db is not in git); the init container copies it
+# onto an empty volume. seed.js wipes tables, so it only ever runs here.
+RUN rm -f prisma/dev.db && npx prisma db push --skip-generate && node prisma/seed.js
 RUN mkdir -p public && npm run build
 
 # 4. Production Runner

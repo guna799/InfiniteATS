@@ -1,0 +1,7 @@
+# Cluster-scoped; created once by deployment/scripts/bootstrap-ci-deployer.sh (the CI deployer can only act inside the namespace)
+apiVersion: v1
+kind: Namespace
+metadata:
+  name: dev
+  labels:
+    app.kubernetes.io/part-of: infinitecareers-platform

@@ -42,12 +42,14 @@ spec:
       labels:
         app: infinitecareers-frontend
     spec:
+      imagePullSecrets:
+      - name: ghcr-pull  # optional; only needed while the GHCR packages are private
       securityContext:
         fsGroup: 1001
       initContainers:
       - name: seed-sqlite
         image: infinitecareers/frontend:dev
-        imagePullPolicy: Never
+        imagePullPolicy: IfNotPresent
         # Seed on first start, then apply additive schema changes (fails rather than dropping data)
         command:
         - sh
@@ -62,7 +64,7 @@ spec:
       containers:
       - name: frontend
         image: infinitecareers/frontend:dev
-        imagePullPolicy: Never
+        imagePullPolicy: IfNotPresent
         ports:
         - containerPort: 3000
         envFrom:

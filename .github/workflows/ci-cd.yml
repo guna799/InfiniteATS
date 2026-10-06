@@ -1,81 +1,205 @@
-name: InfiniteCareers CI/CD Pipeline
+name: CI/CD
 
+# PRs to main: test + build only.
+# Pushes to main: test, build and push images to GHCR, then deploy to the k3s `dev` namespace.
 on:
   push:
-    branches: [ main, develop ]
+    branches: [main]
   pull_request:
-    branches: [ main ]
+    branches: [main]
+  workflow_dispatch: # manual re-deploy of main
+
+permissions:
+  contents: read
+
+concurrency:
+  group: ci-${{ github.ref }}
+  cancel-in-progress: ${{ github.event_name == 'pull_request' }}
 
 jobs:
-  # 1. Backend Validation & Testing
-  backend-test-build:
-    name: Backend (Java 17 / Spring Boot)
+  backend:
+    name: Backend tests (Java 17)
     runs-on: ubuntu-latest
-
+    timeout-minutes: 20
     steps:
-    - uses: actions/checkout@v4
+      - uses: actions/checkout@v4
 
-    - name: Set up JDK 17
-      uses: actions/setup-java@v4
-      with:
-        java-version: '17'
-        distribution: 'temurin'
-        cache: maven
+      - uses: actions/setup-java@v4
+        with:
+          java-version: '17'
+          distribution: temurin
+          cache: maven
 
-    - name: Run Backend Tests & Package JAR
-      working-directory: ./backend
-      run: mvn clean test package
+      - name: Test and package
+        working-directory: backend
+        run: mvn -B -ntp verify
 
-    - name: Upload Backend Build Artifact
-      uses: actions/upload-artifact@v4
-      with:
-        name: backend-jar
-        path: backend/target/*.jar
+      - name: Upload test reports
+        if: failure()
+        uses: actions/upload-artifact@v4
+        with:
+          name: surefire-reports
+          path: backend/target/surefire-reports/
 
-  # 2. Frontend Validation & Build
-  frontend-test-build:
-    name: Frontend (Next.js 14 / TypeScript)
+  frontend:
+    name: Frontend typecheck + build (Node 22)
     runs-on: ubuntu-latest
-
+    timeout-minutes: 20
+    defaults:
+      run:
+        working-directory: frontend
+    env:
+      DATABASE_URL: file:./ci.db
+      NEXT_TELEMETRY_DISABLED: 1
     steps:
-    - uses: actions/checkout@v4
+      - uses: actions/checkout@v4
 
-    - name: Set up Node.js 18
-      uses: actions/setup-node@v4
-      with:
-        node-version: 18
-        cache: 'npm'
+      - uses: actions/setup-node@v4
+        with:
+          node-version: 22
+          cache: npm
+          cache-dependency-path: frontend/package-lock.json
 
-    - name: Install Dependencies
-      working-directory: ./frontend
-      run: npm ci
+      - run: npm ci
 
-    - name: Generate Prisma Client & Run Seed Test
-      working-directory: ./frontend
-      run: |
-        npx prisma generate
-        npx prisma db push
-        node prisma/seed.js
+      - name: Prisma schema + seed
+        run: |
+          npx prisma generate
+          npx prisma db push --skip-generate
+          node prisma/seed.js
 
-    - name: Build Next.js Production Bundle
-      working-directory: ./frontend
-      run: npm run build
+      - name: Typecheck
+        run: npx tsc --noEmit
 
-  # 3. Docker Image Build & Security Scan
-  docker-build:
-    name: Docker Build & Vulnerability Scan
-    needs: [backend-test-build, frontend-test-build]
+      - name: Build
+        run: npm run build
+
+  images:
+    name: Build and push images
+    if: github.event_name != 'pull_request' && github.ref == 'refs/heads/main'
+    needs: [backend, frontend]
     runs-on: ubuntu-latest
-    if: github.ref == 'refs/heads/main'
-
+    timeout-minutes: 30
+    permissions:
+      contents: read
+      packages: write
+    outputs:
+      backend: ${{ steps.names.outputs.backend }}
+      frontend: ${{ steps.names.outputs.frontend }}
     steps:
-    - uses: actions/checkout@v4
+      - uses: actions/checkout@v4
 
-    - name: Set up Docker Buildx
-      uses: docker/setup-buildx-action@v3
+      - name: Image names
+        id: names
+        run: |
+          owner="${GITHUB_REPOSITORY_OWNER,,}"
+          echo "backend=ghcr.io/${owner}/infiniteats-backend:${GITHUB_SHA}" >> "$GITHUB_OUTPUT"
+          echo "frontend=ghcr.io/${owner}/infiniteats-frontend:${GITHUB_SHA}" >> "$GITHUB_OUTPUT"
+          echo "backend_latest=ghcr.io/${owner}/infiniteats-backend:dev" >> "$GITHUB_OUTPUT"
+          echo "frontend_latest=ghcr.io/${owner}/infiniteats-frontend:dev" >> "$GITHUB_OUTPUT"
 
-    - name: Build Backend Docker Image
-      run: docker build -t infinitecareers/backend:latest ./backend
+      - uses: docker/setup-buildx-action@v3
 
-    - name: Build Frontend Docker Image
-      run: docker build -t infinitecareers/frontend:latest ./frontend
+      - uses: docker/login-action@v3
+        with:
+          registry: ghcr.io
+          username: ${{ github.actor }}
+          password: ${{ secrets.GITHUB_TOKEN }}
+
+      - name: Backend image
+        uses: docker/build-push-action@v6
+        with:
+          context: backend
+          push: true
+          tags: |
+            ${{ steps.names.outputs.backend }}
+            ${{ steps.names.outputs.backend_latest }}
+          labels: |
+            org.opencontainers.image.source=${{ github.server_url }}/${{ github.repository }}
+            org.opencontainers.image.revision=${{ github.sha }}
+          cache-from: type=gha,scope=backend
+          cache-to: type=gha,scope=backend,mode=max
+
+      - name: Frontend image
+        uses: docker/build-push-action@v6
+        with:
+          context: frontend
+          push: true
+          tags: |
+            ${{ steps.names.outputs.frontend }}
+            ${{ steps.names.outputs.frontend_latest }}
+          labels: |
+            org.opencontainers.image.source=${{ github.server_url }}/${{ github.repository }}
+            org.opencontainers.image.revision=${{ github.sha }}
+          cache-from: type=gha,scope=frontend
+          cache-to: type=gha,scope=frontend,mode=max
+
+  deploy-dev:
+    name: Deploy to dev
+    needs: images
+    runs-on: ubuntu-latest
+    timeout-minutes: 20
+    environment:
+      name: dev
+      url: http://${{ vars.DEV_HOST }}
+    # Never run two deploys at once; queue instead of cancelling a deploy in progress
+    concurrency:
+      group: deploy-dev
+      cancel-in-progress: false
+    env:
+      DEV_HOST: ${{ vars.DEV_HOST }}
+      DEV_SSH_USER: ${{ vars.DEV_SSH_USER || 'deploy' }}
+    steps:
+      - uses: actions/checkout@v4
+        with:
+          sparse-checkout: deployment
+
+      - name: Configure SSH
+        env:
+          SSH_KEY: ${{ secrets.DEV_SSH_PRIVATE_KEY }}
+          KNOWN_HOSTS: ${{ secrets.DEV_SSH_KNOWN_HOSTS }}
+        run: |
+          test -n "$DEV_HOST" || { echo "::error::Set the DEV_HOST variable on the 'dev' environment"; exit 1; }
+          test -n "$SSH_KEY" || { echo "::error::Set the DEV_SSH_PRIVATE_KEY secret on the 'dev' environment"; exit 1; }
+          test -n "$KNOWN_HOSTS" || { echo "::error::Set the DEV_SSH_KNOWN_HOSTS secret on the 'dev' environment"; exit 1; }
+          install -d -m 700 ~/.ssh
+          printf '%s\n' "$SSH_KEY" > ~/.ssh/id_deploy
+          printf '%s\n' "$KNOWN_HOSTS" > ~/.ssh/known_hosts
+          chmod 600 ~/.ssh/id_deploy ~/.ssh/known_hosts
+          printf 'Host dev\n  HostName %s\n  User %s\n  IdentityFile ~/.ssh/id_deploy\n  IdentitiesOnly yes\n  StrictHostKeyChecking yes\n  ConnectTimeout 20\n' \
+            "$DEV_HOST" "$DEV_SSH_USER" > ~/.ssh/config
+
+      - name: Upload manifests
+        run: rsync -az --delete deployment/ dev:infinitecareers/deployment/
+
+      - name: Apply and roll out
+        env:
+          BACKEND_IMAGE: ${{ needs.images.outputs.backend }}
+          FRONTEND_IMAGE: ${{ needs.images.outputs.frontend }}
+          GHCR_PULL_TOKEN: ${{ secrets.GHCR_PULL_TOKEN }}
+        # The optional pull token goes over stdin so it never appears in the server's process list
+        run: |
+          printf '%s' "$GHCR_PULL_TOKEN" | ssh dev "GHCR_PULL_TOKEN=\$(cat) \
+            BACKEND_IMAGE='$BACKEND_IMAGE' FRONTEND_IMAGE='$FRONTEND_IMAGE' \
+            GHCR_PULL_USER='${{ github.repository_owner }}' \
+            KUBECONFIG=\$HOME/.kube/config infinitecareers/deployment/scripts/deploy-k8s-dev.sh"
+
+      - name: Smoke test
+        run: |
+          check() {
+            local path=$1 expected=$2 code
+            for _ in $(seq 1 12); do
+              code=$(curl -s -o /dev/null -w '%{http_code}' --max-time 10 "http://$DEV_HOST$path" || true)
+              [ "$code" = "$expected" ] && { echo "$path -> $code"; return 0; }
+              sleep 5
+            done
+            echo "::error::$path returned $code, expected $expected"; return 1
+          }
+          check /login 200
+          check / 307
+          check /api/v1/audit/verify-chain 401
+          check /ws/info 200
+
+      - name: Clean up SSH key
+        if: always()
+        run: rm -f ~/.ssh/id_deploy

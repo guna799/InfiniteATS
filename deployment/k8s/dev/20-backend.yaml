@@ -15,10 +15,12 @@ spec:
       labels:
         app: infinitecareers-backend
     spec:
+      imagePullSecrets:
+      - name: ghcr-pull  # optional; only needed while the GHCR packages are private
       containers:
       - name: backend
         image: infinitecareers/backend:dev
-        imagePullPolicy: Never
+        imagePullPolicy: IfNotPresent
         ports:
         - containerPort: 8080
         envFrom:

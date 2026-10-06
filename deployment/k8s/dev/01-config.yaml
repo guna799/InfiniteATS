@@ -1,11 +1,4 @@
 apiVersion: v1
-kind: Namespace
-metadata:
-  name: dev
-  labels:
-    app.kubernetes.io/part-of: infinitecareers-platform
----
-apiVersion: v1
 kind: ConfigMap
 metadata:
   name: infinitecareers-config
