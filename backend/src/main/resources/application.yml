@@ -16,20 +16,16 @@ spring:
 
 app:
   realtime:
-    # local = single instance; redis = fan out to STOMP clients on every replica
     fanout: ${APP_REALTIME_FANOUT:local}
   jwt:
     secret: 404E635266556A586E3272357538782F413F4428472B4B6250645367566B5970
     expiration-ms: 86400000 # 24 hours
     refresh-expiration-ms: 604800000 # 7 days
   storage:
-    provider: local # local or s3
+    provider: ${APP_STORAGE_PROVIDER:s3} # local or s3
     s3:
-      bucket: infinite-careers-documents
-      region: us-east-1
-      endpoint: http://localhost:4566
-      access-key: test
-      secret-key: test
+      bucket: ${AWS_S3_BUCKET:infiniteatsbucket}
+      region: ${AWS_REGION:us-east-2}
   security:
     rate-limit:
       requests-per-minute: 120

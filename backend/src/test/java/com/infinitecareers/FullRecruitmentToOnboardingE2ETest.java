@@ -31,12 +31,14 @@ import com.infinitecareers.modules.recruiting.RequisitionService;
 import com.infinitecareers.modules.recruiting.RequisitionState;
 import com.infinitecareers.modules.tenancy.Tenant;
 import com.infinitecareers.modules.tenancy.TenantRepository;
+import org.junit.jupiter.api.AfterEach;
 import org.junit.jupiter.api.BeforeEach;
 import org.junit.jupiter.api.DisplayName;
 import org.junit.jupiter.api.Test;
 import org.springframework.beans.factory.annotation.Autowired;
 import org.springframework.boot.test.context.SpringBootTest;
 import org.springframework.boot.test.mock.mockito.MockBean;
+import org.springframework.test.annotation.DirtiesContext;
 import org.springframework.test.context.ActiveProfiles;
 
 import java.math.BigDecimal;
@@ -54,6 +56,7 @@ import static org.mockito.Mockito.when;
 
 @SpringBootTest
 @ActiveProfiles("test")
+@DirtiesContext(classMode = DirtiesContext.ClassMode.AFTER_CLASS)
 public class FullRecruitmentToOnboardingE2ETest {
 
     private static final String TENANT_ID = "tenant-e2e-enterprise";
@@ -145,8 +148,13 @@ public class FullRecruitmentToOnboardingE2ETest {
                 .thenAnswer(invocation -> {
                     String key = invocation.getArgument(0);
                     int expiry = invocation.getArgument(3);
-                    return String.format("https://infiniteatsbucket.s3.us-east-1.amazonaws.com/%s?X-Amz-Expires=%d", key, expiry);
+                    return String.format("https://infiniteatsbucket.s3.us-east-2.amazonaws.com/%s?X-Amz-Expires=%d", key, expiry);
                 });
+    }
+
+    @AfterEach
+    void tearDown() {
+        TenantContextHolder.clear();
     }
 
     private void asUser(String userId, String email, Set<String> roles, Set<String> perms) {
