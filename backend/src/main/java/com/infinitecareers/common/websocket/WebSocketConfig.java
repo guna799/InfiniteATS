@@ -11,9 +11,15 @@ import org.springframework.web.socket.config.annotation.WebSocketMessageBrokerCo
 public class WebSocketConfig implements WebSocketMessageBrokerConfigurer {
 
     private final StompSecurityInterceptor stompSecurityInterceptor;
+    private final CookieAuthHandshakeInterceptor cookieAuthHandshakeInterceptor;
+    private final String[] allowedOrigins;
 
-    public WebSocketConfig(StompSecurityInterceptor stompSecurityInterceptor) {
+    public WebSocketConfig(StompSecurityInterceptor stompSecurityInterceptor,
+                           CookieAuthHandshakeInterceptor cookieAuthHandshakeInterceptor,
+                           @org.springframework.beans.factory.annotation.Value("${app.cors.allowed-origins:}") String[] allowedOrigins) {
         this.stompSecurityInterceptor = stompSecurityInterceptor;
+        this.cookieAuthHandshakeInterceptor = cookieAuthHandshakeInterceptor;
+        this.allowedOrigins = allowedOrigins;
     }
 
     @Override
@@ -27,9 +33,13 @@ public class WebSocketConfig implements WebSocketMessageBrokerConfigurer {
 
     @Override
     public void registerStompEndpoints(StompEndpointRegistry registry) {
-        registry.addEndpoint("/ws")
-                .setAllowedOriginPatterns("*")
-                .withSockJS();
+        // Same-origin only unless app.cors.allowed-origins lists more: the session is cookie-authenticated,
+        // so accepting any Origin would allow cross-site WebSocket hijacking.
+        var endpoint = registry.addEndpoint("/ws").addInterceptors(cookieAuthHandshakeInterceptor);
+        if (allowedOrigins.length > 0) {
+            endpoint.setAllowedOrigins(allowedOrigins);
+        }
+        endpoint.withSockJS();
     }
 
     @Override

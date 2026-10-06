@@ -27,6 +27,11 @@ spring:
 app:
   security:
     allow-tenant-header: true
+  # Next.js dev server proxies /api/v1 and /ws here from :3000
+  cors:
+    allowed-origins: http://localhost:3000
+  realtime:
+    fanout: local
   storage:
     provider: local
     local-dir: ./uploads

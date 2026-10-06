@@ -2,6 +2,9 @@
 import { SignJWT, jwtVerify } from 'jose';
 
 export const SESSION_COOKIE = 'ic_session';
+// Spring access token (HttpOnly); sent with /api/v1 requests and the /ws handshake. Never readable by page JS.
+export const ACCESS_COOKIE = 'ic_access';
+const ACCESS_TTL_SECONDS = 60 * 60 * 24; // matches app.jwt.expiration-ms
 const SESSION_TTL_SECONDS = 60 * 60 * 12; // 12 hours
 
 export type SessionKind = 'staff' | 'candidate';
@@ -11,8 +14,10 @@ export interface Session {
   kind: SessionKind;
   email: string;
   name: string;
-  orgId?: string; // staff only
+  orgId?: string; // staff only: legacy SQLite organization still used by pages not yet on the Spring API
   role?: string; // staff only
+  tenantId?: string; // staff only: Spring tenant (realtime topic, /api/v1)
+  backendUserId?: string; // staff only: Spring user id (actorId in events)
 }
 
 function secretKey(): Uint8Array {
@@ -43,6 +48,10 @@ export async function verifySessionToken(token: string | undefined): Promise<Ses
   } catch {
     return null;
   }
+}
+
+export function accessCookieOptions() {
+  return { ...sessionCookieOptions(), maxAge: ACCESS_TTL_SECONDS };
 }
 
 export function sessionCookieOptions() {

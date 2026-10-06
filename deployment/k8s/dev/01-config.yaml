@@ -10,6 +10,8 @@ data:
   SPRING_DATA_REDIS_PORT: "6379"
   OPENSEARCH_URL: "http://opensearch-service:9200"
   APP_STORAGE_PROVIDER: "local"
+  # Two backend replicas: deliver realtime events to clients on every replica via Redis pub/sub
+  APP_REALTIME_FANOUT: "redis"
   JAVA_TOOL_OPTIONS: "-XX:MaxRAMPercentage=75 -XX:+UseSerialGC"
 # Secret `infinitecareers-secrets` is generated on the server by
 # deployment/scripts/deploy-k8s-dev.sh so no credentials live in git.

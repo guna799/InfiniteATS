@@ -1,10 +1,10 @@
 package com.infinitecareers.common.websocket;
 
+import com.infinitecareers.common.events.DomainEvent;
 import org.springframework.messaging.simp.SimpMessagingTemplate;
 import org.springframework.stereotype.Service;
 
-import java.util.Map;
-
+/** Pushes to STOMP clients connected to this replica. Use {@link RealtimeFanout} to reach all replicas. */
 @Service
 public class RealtimeEventPublisher {
 
@@ -14,14 +14,12 @@ public class RealtimeEventPublisher {
         this.messagingTemplate = messagingTemplate;
     }
 
-    public void broadcastTenantEvent(String tenantId, String eventType, Object payload) {
-        String destination = "/topic/tenants/" + tenantId + "/events";
-        messagingTemplate.convertAndSend(destination, Map.of(
-                "eventType", eventType,
-                "tenantId", tenantId,
-                "payload", payload,
-                "timestamp", System.currentTimeMillis()
-        ));
+    public static String tenantTopic(String tenantId) {
+        return "/topic/tenants/" + tenantId + "/events";
+    }
+
+    public void broadcastTenantEvent(DomainEvent event) {
+        messagingTemplate.convertAndSend(tenantTopic(event.tenantId()), event);
     }
 
     public void sendPrivateNotification(String userId, Object notificationPayload) {

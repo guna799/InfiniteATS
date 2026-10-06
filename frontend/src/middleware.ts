@@ -52,9 +52,13 @@ export async function middleware(request: NextRequest) {
   if (matches(pathname, CANDIDATE_PAGES) || pathname.startsWith('/api/candidate/')) {
     return deny(request, 403, '/');
   }
-  // Staff APIs take the tenant as ?orgId= and treat a missing one as "all orgs";
-  // pin it to the signed-in user's org.
-  if (pathname.startsWith('/api/') && session.orgId) {
+  // Legacy SQLite APIs take the tenant as ?orgId= and treat a missing one as "all orgs";
+  // pin it to the signed-in user's org, and refuse them entirely if the user has none.
+  const legacyApi = pathname.startsWith('/api/') && !pathname.startsWith('/api/auth/');
+  if (legacyApi && !session.orgId) {
+    return deny(request, 403, '/');
+  }
+  if (legacyApi && session.orgId) {
     const requestedOrg = searchParams.get('orgId');
     if (requestedOrg && requestedOrg !== session.orgId) {
       return deny(request, 403, '/');
@@ -69,5 +73,6 @@ export async function middleware(request: NextRequest) {
 }
 
 export const config = {
-  matcher: ['/((?!_next/static|_next/image|favicon.ico).*)'],
+  // /api/v1 and /ws belong to Spring (its own JWT auth); Next only proxies them in local development
+  matcher: ['/((?!_next/static|_next/image|favicon.ico|api/v1/|ws/).*)'],
 };

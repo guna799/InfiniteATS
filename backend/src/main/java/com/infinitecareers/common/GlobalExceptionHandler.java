@@ -15,6 +15,8 @@ import java.util.NoSuchElementException;
 @RestControllerAdvice
 public class GlobalExceptionHandler {
 
+    private static final org.slf4j.Logger log = org.slf4j.LoggerFactory.getLogger(GlobalExceptionHandler.class);
+
     @ExceptionHandler(MethodArgumentNotValidException.class)
     public ResponseEntity<ApiResponse<Void>> handleValidationExceptions(MethodArgumentNotValidException ex) {
         List<ApiError> errors = new ArrayList<>();
@@ -50,9 +52,23 @@ public class GlobalExceptionHandler {
                 .body(ApiResponse.error("BAD_REQUEST", ex.getMessage()));
     }
 
+    @ExceptionHandler(StaleStateException.class)
+    public ResponseEntity<ApiResponse<Object>> handleStaleState(StaleStateException ex) {
+        ApiError error = new ApiError("STALE_STATE", ex.getMessage(), null, java.util.Map.of("current", ex.getCurrent()));
+        return ResponseEntity.status(HttpStatus.CONFLICT).body(ApiResponse.error(java.util.List.of(error)));
+    }
+
+    @ExceptionHandler(org.springframework.dao.OptimisticLockingFailureException.class)
+    public ResponseEntity<ApiResponse<Void>> handleOptimisticLock(org.springframework.dao.OptimisticLockingFailureException ex) {
+        return ResponseEntity.status(HttpStatus.CONFLICT)
+                .body(ApiResponse.error("STALE_STATE", "This record was changed by someone else. Reload and try again."));
+    }
+
     @ExceptionHandler(Exception.class)
     public ResponseEntity<ApiResponse<Void>> handleGenericException(Exception ex) {
+        // Don't leak internals (SQL, class names) to clients; the correlation id ties the response to the log
+        log.error("Unhandled exception", ex);
         return ResponseEntity.status(HttpStatus.INTERNAL_SERVER_ERROR)
-                .body(ApiResponse.error("INTERNAL_SERVER_ERROR", ex.getMessage()));
+                .body(ApiResponse.error("INTERNAL_SERVER_ERROR", "Unexpected server error"));
     }
 }

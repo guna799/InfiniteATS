@@ -15,6 +15,9 @@ spring:
     default-property-inclusion: non_null
 
 app:
+  realtime:
+    # local = single instance; redis = fan out to STOMP clients on every replica
+    fanout: ${APP_REALTIME_FANOUT:local}
   jwt:
     secret: 404E635266556A586E3272357538782F413F4428472B4B6250645367566B5970
     expiration-ms: 86400000 # 24 hours

@@ -15,7 +15,11 @@ public class Application extends BaseTenantEntity {
     private String requisitionId;
 
     @Column(name = "stage", nullable = false)
-    private String stage = "NEW";
+    private String stage = PipelineStage.APPLIED.name();
+
+    @Version
+    @Column(name = "version", nullable = false)
+    private Long version = 0L;
 
     @Column(name = "status")
     private String status = "ACTIVE";
@@ -66,4 +70,7 @@ public class Application extends BaseTenantEntity {
     public void setAppliedDate(Instant appliedDate) { this.appliedDate = appliedDate; }
     public Instant getLastActivity() { return lastActivity; }
     public void setLastActivity(Instant lastActivity) { this.lastActivity = lastActivity; }
+
+    public Long getVersion() { return version; }
+    public void setVersion(Long version) { this.version = version; }
 }

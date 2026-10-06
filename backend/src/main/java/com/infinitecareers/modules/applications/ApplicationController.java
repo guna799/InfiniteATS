@@ -53,16 +53,17 @@ public class ApplicationController {
         return ResponseEntity.ok(ApiResponse.success(applicationService.getApplicationById(id)));
     }
 
+    public record MoveStageRequest(String stage, Long expectedVersion, String reason, String notes) {
+    }
+
     @PostMapping("/{id}/move-stage")
-    @Operation(summary = "Move application to a new pipeline stage with audit trail")
-    public ResponseEntity<ApiResponse<Application>> moveStage(
+    @Operation(summary = "Move application to a new pipeline stage; 409 STALE_STATE if expectedVersion is outdated")
+    public ResponseEntity<ApiResponse<PipelineCard>> moveStage(
             @PathVariable String id,
-            @RequestBody Map<String, String> payload) {
-        String targetStage = payload.get("stage");
-        String reason = payload.get("reason");
-        String notes = payload.get("notes");
-        Application updated = applicationService.updateStage(id, targetStage, reason, notes);
-        return ResponseEntity.ok(ApiResponse.success(updated));
+            @RequestBody MoveStageRequest request) {
+        PipelineCard card = applicationService.moveStage(
+                id, request.stage(), request.expectedVersion(), request.reason(), request.notes());
+        return ResponseEntity.ok(ApiResponse.success(card));
     }
 
     @GetMapping("/{id}/history")

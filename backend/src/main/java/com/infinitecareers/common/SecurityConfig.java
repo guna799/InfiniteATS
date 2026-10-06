@@ -26,9 +26,15 @@ public class SecurityConfig {
     // Dev-only conveniences (X-Tenant-ID header, Swagger UI, H2 console); enabled in local/test profiles
     private final boolean allowTenantHeader;
 
+    // Cross-origin browser access (e.g. a separately hosted UI). The UI is served same-origin behind the
+    // ingress, so this is empty by default; credentials are allowed, so never use "*" here.
+    private final List<String> allowedOrigins;
+
     public SecurityConfig(TenantFilter tenantFilter,
-                          @org.springframework.beans.factory.annotation.Value("${app.security.allow-tenant-header:false}") boolean allowTenantHeader) {
+                          @org.springframework.beans.factory.annotation.Value("${app.security.allow-tenant-header:false}") boolean allowTenantHeader,
+                          @org.springframework.beans.factory.annotation.Value("${app.cors.allowed-origins:}") List<String> allowedOrigins) {
         this.allowTenantHeader = allowTenantHeader;
+        this.allowedOrigins = allowedOrigins;
         this.tenantFilter = tenantFilter;
     }
 
@@ -78,7 +84,7 @@ public class SecurityConfig {
     @Bean
     public CorsConfigurationSource corsConfigurationSource() {
         CorsConfiguration configuration = new CorsConfiguration();
-        configuration.setAllowedOriginPatterns(List.of("*"));
+        configuration.setAllowedOrigins(allowedOrigins);
         configuration.setAllowedMethods(List.of("GET", "POST", "PUT", "PATCH", "DELETE", "OPTIONS"));
         configuration.setAllowedHeaders(List.of("*"));
         configuration.setExposedHeaders(List.of("Authorization", "X-Total-Count", "X-Idempotency-Key"));
