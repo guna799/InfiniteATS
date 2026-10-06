@@ -36,8 +36,11 @@ async function staffLogin(email: string, password: string): Promise<{ session: S
     method: 'POST',
     body: JSON.stringify({ email, password }),
   });
-  if (auth.status >= 500) return 'unavailable';
-  if (!auth.ok || !auth.data) return null;
+  // Only an explicit credentials rejection means "not staff"; anything else (5xx, 404 from a wrong
+  // BACKEND_URL, non-JSON) means Spring wasn't reached and must not look like a bad password.
+  if (!auth.ok && ![400, 401, 403, 409].includes(auth.status)) return 'unavailable';
+  if (!auth.ok) return null;
+  if (!auth.data?.accessToken) return 'unavailable';
   const a = auth.data;
 
   // Bridge to the legacy SQLite organization (same slug) for pages not yet on the Spring API
