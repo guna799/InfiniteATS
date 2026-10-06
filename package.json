@@ -1,0 +1,27 @@
+{
+  "name": "infinite-careers-root",
+  "version": "1.0.0",
+  "private": true,
+  "description": "InfiniteCareers Enterprise ATS & Employee Onboarding SaaS Platform",
+  "scripts": {
+    "dev:frontend": "cd frontend && npm run dev",
+    "dev:backend": "cd backend && mvn spring-boot:run -Dspring-boot.run.profiles=local",
+    "build:frontend": "cd frontend && npm run build",
+    "build:backend": "cd backend && mvn clean package -DskipTests",
+    "test:backend": "cd backend && mvn test",
+    "docker:local": "docker compose -f deployment/docker/docker-compose.yml up --build",
+    "docker:prod": "docker compose -f deployment/docker/docker-compose.prod.yml up -d --build",
+    "docker:down": "docker compose -f deployment/docker/docker-compose.yml down"
+  },
+  "keywords": [
+    "ats",
+    "recruitment",
+    "onboarding",
+    "saas",
+    "nextjs",
+    "spring-boot",
+    "postgresql"
+  ],
+  "author": "Gunavardhan Mandala",
+  "license": "MIT"
+}

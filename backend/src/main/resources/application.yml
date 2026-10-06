@@ -1,0 +1,44 @@
+server:
+  port: 8080
+  shutdown: graceful
+
+spring:
+  application:
+    name: infinite-careers-backend
+  profiles:
+    active: local
+  lifecycle:
+    timeout-per-shutdown-phase: 20s
+  jackson:
+    serialization:
+      write-dates-as-timestamps: false
+    default-property-inclusion: non_null
+
+app:
+  jwt:
+    secret: 404E635266556A586E3272357538782F413F4428472B4B6250645367566B5970
+    expiration-ms: 86400000 # 24 hours
+    refresh-expiration-ms: 604800000 # 7 days
+  storage:
+    provider: local # local or s3
+    s3:
+      bucket: infinite-careers-documents
+      region: us-east-1
+      endpoint: http://localhost:4566
+      access-key: test
+      secret-key: test
+  security:
+    rate-limit:
+      requests-per-minute: 120
+    max-file-size-bytes: 25000000 # 25MB
+
+management:
+  endpoints:
+    web:
+      exposure:
+        include: health,info,metrics,prometheus
+  endpoint:
+    health:
+      show-details: when-authorized
+      probes:
+        enabled: true

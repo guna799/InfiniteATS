@@ -1,0 +1,7 @@
+apiVersion: v1
+kind: Namespace
+metadata:
+  name: infinitecareers
+  labels:
+    app.kubernetes.io/name: infinitecareers
+    app.kubernetes.io/part-of: infinitecareers-platform

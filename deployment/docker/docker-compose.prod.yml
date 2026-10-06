@@ -1,0 +1,129 @@
+version: '3.8'
+
+services:
+  # Reverse Proxy & SSL Gateway
+  nginx:
+    image: nginx:alpine
+    container_name: infinitecareers-gateway
+    restart: always
+    ports:
+      - "80:80"
+      - "443:443"
+    volumes:
+      - ./nginx/nginx.conf:/etc/nginx/nginx.conf:ro
+    depends_on:
+      - frontend
+      - backend
+    networks:
+      - infinitecareers-prod-network
+
+  # PostgreSQL Multi-Tenant Database
+  postgres:
+    image: postgres:16-alpine
+    container_name: infinitecareers-db-prod
+    restart: always
+    environment:
+      POSTGRES_DB: infinitecareers
+      POSTGRES_USER: ${POSTGRES_USER:-postgres}
+      POSTGRES_PASSWORD: ${POSTGRES_PASSWORD:-postgrespassword}
+    volumes:
+      - postgres_prod_data:/var/lib/postgresql/data
+      - ../../database/schema:/docker-entrypoint-initdb.d/schema:ro
+      - ../../database/seeds:/docker-entrypoint-initdb.d/seeds:ro
+      - ../../database/init-db.sh:/docker-entrypoint-initdb.d/01-init.sh:ro
+    healthcheck:
+      test: ["CMD-SHELL", "pg_isready -U postgres -d infinitecareers"]
+      interval: 10s
+      timeout: 5s
+      retries: 5
+    deploy:
+      resources:
+        limits:
+          cpus: '2.0'
+          memory: 4096M
+    networks:
+      - infinitecareers-prod-network
+
+  # Redis Cluster / Cache
+  redis:
+    image: redis:7-alpine
+    container_name: infinitecareers-redis-prod
+    restart: always
+    command: redis-server --appendonly yes --requirepass ${REDIS_PASSWORD:-redispassword}
+    volumes:
+      - redis_prod_data:/data
+    healthcheck:
+      test: ["CMD", "redis-cli", "-a", "${REDIS_PASSWORD:-redispassword}", "ping"]
+      interval: 10s
+      timeout: 5s
+      retries: 5
+    deploy:
+      resources:
+        limits:
+          cpus: '1.0'
+          memory: 1024M
+    networks:
+      - infinitecareers-prod-network
+
+  # Spring Boot Backend
+  backend:
+    build:
+      context: ../../backend
+      dockerfile: Dockerfile
+    container_name: infinitecareers-backend-prod
+    restart: always
+    depends_on:
+      postgres:
+        condition: service_healthy
+      redis:
+        condition: service_healthy
+    environment:
+      SPRING_PROFILES_ACTIVE: prod
+      DATABASE_URL: jdbc:postgresql://postgres:5432/infinitecareers
+      DATABASE_USER: ${POSTGRES_USER:-postgres}
+      DATABASE_PASSWORD: ${POSTGRES_PASSWORD:-postgrespassword}
+      SPRING_DATA_REDIS_HOST: redis
+      SPRING_DATA_REDIS_PORT: 6379
+      SPRING_DATA_REDIS_PASSWORD: ${REDIS_PASSWORD:-redispassword}
+      APP_JWT_SECRET: ${JWT_SECRET:-404E635266556A586E3272357538782F413F4428472B4B6250645367566B5970}
+    deploy:
+      replicas: 2
+      resources:
+        limits:
+          cpus: '2.0'
+          memory: 2048M
+        reservations:
+          cpus: '0.5'
+          memory: 512M
+    networks:
+      - infinitecareers-prod-network
+
+  # Next.js Frontend
+  frontend:
+    build:
+      context: ../../frontend
+      dockerfile: Dockerfile
+    container_name: infinitecareers-frontend-prod
+    restart: always
+    depends_on:
+      - backend
+    environment:
+      NODE_ENV: production
+      NEXT_PUBLIC_APP_URL: https://${DOMAIN_NAME:-infinitecareers.io}
+      NEXT_PUBLIC_API_URL: https://${DOMAIN_NAME:-infinitecareers.io}/api/v1
+    deploy:
+      replicas: 2
+      resources:
+        limits:
+          cpus: '1.5'
+          memory: 1536M
+    networks:
+      - infinitecareers-prod-network
+
+volumes:
+  postgres_prod_data:
+  redis_prod_data:
+
+networks:
+  infinitecareers-prod-network:
+    driver: bridge

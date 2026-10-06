@@ -1,0 +1,81 @@
+name: InfiniteCareers CI/CD Pipeline
+
+on:
+  push:
+    branches: [ main, develop ]
+  pull_request:
+    branches: [ main ]
+
+jobs:
+  # 1. Backend Validation & Testing
+  backend-test-build:
+    name: Backend (Java 17 / Spring Boot)
+    runs-on: ubuntu-latest
+
+    steps:
+    - uses: actions/checkout@v4
+
+    - name: Set up JDK 17
+      uses: actions/setup-java@v4
+      with:
+        java-version: '17'
+        distribution: 'temurin'
+        cache: maven
+
+    - name: Run Backend Tests & Package JAR
+      working-directory: ./backend
+      run: mvn clean test package
+
+    - name: Upload Backend Build Artifact
+      uses: actions/upload-artifact@v4
+      with:
+        name: backend-jar
+        path: backend/target/*.jar
+
+  # 2. Frontend Validation & Build
+  frontend-test-build:
+    name: Frontend (Next.js 14 / TypeScript)
+    runs-on: ubuntu-latest
+
+    steps:
+    - uses: actions/checkout@v4
+
+    - name: Set up Node.js 18
+      uses: actions/setup-node@v4
+      with:
+        node-version: 18
+        cache: 'npm'
+
+    - name: Install Dependencies
+      working-directory: ./frontend
+      run: npm ci
+
+    - name: Generate Prisma Client & Run Seed Test
+      working-directory: ./frontend
+      run: |
+        npx prisma generate
+        npx prisma db push
+        node prisma/seed.js
+
+    - name: Build Next.js Production Bundle
+      working-directory: ./frontend
+      run: npm run build
+
+  # 3. Docker Image Build & Security Scan
+  docker-build:
+    name: Docker Build & Vulnerability Scan
+    needs: [backend-test-build, frontend-test-build]
+    runs-on: ubuntu-latest
+    if: github.ref == 'refs/heads/main'
+
+    steps:
+    - uses: actions/checkout@v4
+
+    - name: Set up Docker Buildx
+      uses: docker/setup-buildx-action@v3
+
+    - name: Build Backend Docker Image
+      run: docker build -t infinitecareers/backend:latest ./backend
+
+    - name: Build Frontend Docker Image
+      run: docker build -t infinitecareers/frontend:latest ./frontend

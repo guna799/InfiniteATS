@@ -1,0 +1,110 @@
+# The Next.js app serves its own /api/* routes from a SQLite database (Prisma),
+# kept on this volume and seeded from the image on first start.
+apiVersion: v1
+kind: ConfigMap
+metadata:
+  name: frontend-config
+  namespace: dev
+data:
+  # Resume storage. Leave S3_BUCKET empty to store resumes on the volume under /data/uploads.
+  S3_BUCKET: ""
+  AWS_REGION: "us-east-2"
+  RESUME_LOCAL_DIR: "/data/uploads"
+  # Set to "true" once the site is served over HTTPS
+  COOKIE_SECURE: "false"
+---
+apiVersion: v1
+kind: PersistentVolumeClaim
+metadata:
+  name: frontend-data
+  namespace: dev
+spec:
+  accessModes: [ReadWriteOnce]
+  storageClassName: local-path
+  resources:
+    requests:
+      storage: 1Gi
+---
+apiVersion: apps/v1
+kind: Deployment
+metadata:
+  name: infinitecareers-frontend
+  namespace: dev
+  labels:
+    app: infinitecareers-frontend
+spec:
+  replicas: 2
+  selector:
+    matchLabels:
+      app: infinitecareers-frontend
+  template:
+    metadata:
+      labels:
+        app: infinitecareers-frontend
+    spec:
+      securityContext:
+        fsGroup: 1001
+      initContainers:
+      - name: seed-sqlite
+        image: infinitecareers/frontend:dev
+        imagePullPolicy: Never
+        # Seed on first start, then apply additive schema changes (fails rather than dropping data)
+        command:
+        - sh
+        - -c
+        - test -f /data/dev.db || cp /app/prisma/dev.db /data/dev.db; mkdir -p /data/uploads && prisma db push --skip-generate --schema /app/prisma/schema.prisma
+        env:
+        - name: DATABASE_URL
+          value: "file:/data/dev.db"
+        volumeMounts:
+        - name: data
+          mountPath: /data
+      containers:
+      - name: frontend
+        image: infinitecareers/frontend:dev
+        imagePullPolicy: Never
+        ports:
+        - containerPort: 3000
+        envFrom:
+        - configMapRef:
+            name: frontend-config
+        env:
+        - name: DATABASE_URL
+          value: "file:/data/dev.db"
+        - name: AUTH_SECRET
+          valueFrom:
+            secretKeyRef: {name: infinitecareers-secrets, key: AUTH_SECRET}
+        resources:
+          requests: {cpu: 100m, memory: 192Mi}
+          limits: {memory: 512Mi}
+        readinessProbe:
+          httpGet:
+            path: /
+            port: 3000
+          initialDelaySeconds: 5
+          periodSeconds: 10
+        livenessProbe:
+          httpGet:
+            path: /
+            port: 3000
+          initialDelaySeconds: 20
+          periodSeconds: 20
+        volumeMounts:
+        - name: data
+          mountPath: /data
+      volumes:
+      - name: data
+        persistentVolumeClaim:
+          claimName: frontend-data
+---
+apiVersion: v1
+kind: Service
+metadata:
+  name: frontend-service
+  namespace: dev
+spec:
+  selector:
+    app: infinitecareers-frontend
+  ports:
+  - port: 3000
+    targetPort: 3000
