@@ -35,6 +35,20 @@ public class DocumentController {
         return ResponseEntity.ok(ApiResponse.success(documentService.getDocumentsByCandidate(candidateId)));
     }
 
+    @GetMapping("/by-candidate/{candidateId}/progress")
+    @Operation(summary = "Get candidate onboarding document progress and requirements checklist")
+    public ResponseEntity<ApiResponse<Map<String, Object>>> getCandidateOnboardingProgress(@PathVariable String candidateId) {
+        return ResponseEntity.ok(ApiResponse.success(documentService.getCandidateOnboardingProgress(candidateId)));
+    }
+
+    @GetMapping("/by-candidate/{candidateId}/history/{documentType}")
+    @Operation(summary = "Get version history for a specific candidate document type")
+    public ResponseEntity<ApiResponse<List<Document>>> getDocumentHistory(
+            @PathVariable String candidateId,
+            @PathVariable String documentType) {
+        return ResponseEntity.ok(ApiResponse.success(documentService.getDocumentHistory(candidateId, documentType)));
+    }
+
     @GetMapping("/by-employee/{employeeId}")
     @Operation(summary = "List documents for employee")
     public ResponseEntity<ApiResponse<List<Document>>> getDocumentsByEmployee(@PathVariable String employeeId) {

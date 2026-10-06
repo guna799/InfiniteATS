@@ -27,11 +27,13 @@ spring:
 app:
   security:
     allow-tenant-header: true
-  # Next.js dev server proxies /api/v1 and /ws here from :3000 or :3001
   cors:
     allowed-origins: http://localhost:3000,http://localhost:3001
   realtime:
     fanout: local
   storage:
-    provider: local
+    provider: ${APP_STORAGE_PROVIDER:s3}
+    s3:
+      bucket: ${AWS_S3_BUCKET:infiniteatsbucket}
+      region: ${AWS_REGION:us-east-2}
     local-dir: ./uploads
